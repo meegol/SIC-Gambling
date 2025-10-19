@@ -1,0 +1,20 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-gradient-to-br from-casino-dark via-gray-900 to-casino-dark text-white;
+  }
+}
+
+@layer components {
+  .betting-chip {
+    @apply w-12 h-12 rounded-full border-4 border-white shadow-lg flex items-center justify-center text-white font-bold cursor-pointer transition-all hover:scale-110;
+  }
+  
+  .roulette-number {
+    @apply w-8 h-8 sm:w-10 sm:h-10 flex items-center justify-center text-xs sm:text-sm font-bold border border-gray-700 rounded transition-all hover:scale-110 cursor-pointer;
+  }
+}
+

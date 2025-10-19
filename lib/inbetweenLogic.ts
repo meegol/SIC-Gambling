@@ -11,8 +11,12 @@ export function createDeck(): InBetweenCard[] {
       let value: number
       if (rank === 'A') {
         value = 1
-      } else if (['J', 'Q', 'K'].includes(rank)) {
-        value = 10
+      } else if (rank === 'J') {
+        value = 11
+      } else if (rank === 'Q') {
+        value = 12
+      } else if (rank === 'K') {
+        value = 13
       } else {
         value = parseInt(rank)
       }
@@ -54,6 +58,8 @@ export function getCardColor(card: InBetweenCard): string {
 }
 
 export function isCardBetween(card1: InBetweenCard, card2: InBetweenCard, card3: InBetweenCard): boolean {
+  if (!card1 || !card2 || !card3) return false
+  
   const val1 = card1.value
   const val2 = card2.value
   const val3 = card3.value
@@ -65,10 +71,12 @@ export function isCardBetween(card1: InBetweenCard, card2: InBetweenCard, card3:
 }
 
 export function areCardsEqual(card1: InBetweenCard, card2: InBetweenCard): boolean {
+  if (!card1 || !card2) return false
   return card1.value === card2.value
 }
 
 export function isCardHigher(card1: InBetweenCard, card2: InBetweenCard): boolean {
+  if (!card1 || !card2) return false
   return card1.value > card2.value
 }
 

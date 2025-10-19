@@ -260,7 +260,7 @@ export default function InBetweenPage() {
                 <li>• If you lose, bet doubles</li>
                 <li>• If you win, take the pot!</li>
                 <li>• Same value cards: choose higher/lower</li>
-                <li>• Aces = 1, Face cards = 10</li>
+                <li>• A=1, J=11, Q=12, K=13</li>
               </ul>
             </div>
           </div>

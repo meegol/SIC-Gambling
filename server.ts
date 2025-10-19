@@ -176,6 +176,15 @@ app.prepare().then(() => {
       }
 
       const game = blackjackGames.get(roomCode)!
+      
+      // Check if player already exists
+      const existingPlayer = game.players.find((p) => p.id === socket.id)
+      if (existingPlayer) {
+        console.log(`${playerName} already in blackjack game`)
+        io.to(roomCode).emit('blackjack-update', game)
+        return
+      }
+
       const player: BlackjackPlayer = {
         id: socket.id,
         name: playerName,
@@ -279,6 +288,15 @@ app.prepare().then(() => {
       }
 
       const game = pokerGames.get(roomCode)!
+      
+      // Check if player already exists
+      const existingPlayer = game.players.find((p) => p.id === socket.id)
+      if (existingPlayer) {
+        console.log(`${playerName} already in poker game`)
+        io.to(roomCode).emit('poker-update', game)
+        return
+      }
+
       const player: PokerPlayer = {
         id: socket.id,
         name: playerName,
@@ -370,6 +388,15 @@ app.prepare().then(() => {
       }
 
       const game = inBetweenGames.get(roomCode)!
+      
+      // Check if player already exists
+      const existingPlayer = game.players.find((p) => p.id === socket.id)
+      if (existingPlayer) {
+        console.log(`${playerName} already in game`)
+        io.to(roomCode).emit('inbetween-update', game)
+        return
+      }
+
       const player: InBetweenPlayer = {
         id: socket.id,
         name: playerName,
@@ -397,14 +424,23 @@ app.prepare().then(() => {
       const { roomCode, action } = data
       const game = inBetweenGames.get(roomCode)
 
-      if (!game || game.currentPlayerIndex < 0) return
+      if (!game || game.currentPlayerIndex < 0) {
+        console.log('Game not found or no current player')
+        return
+      }
 
       const player = game.players[game.currentPlayerIndex]
-      if (!player || player.id !== socket.id) return
+      if (!player || player.id !== socket.id) {
+        console.log('Not current player or player not found')
+        return
+      }
 
       if (action === 'FOLD') {
         player.hasFolded = true
+        console.log(`${player.name} folded`)
+        io.to(roomCode).emit('inbetween-update', game)
         nextInBetweenPlayer(game)
+        return
       } else if (action === 'PLAY') {
         // Draw third card
         const thirdCard = dealInBetweenCard(game.deck)
@@ -435,16 +471,23 @@ app.prepare().then(() => {
               game.currentBet *= 2 // Double the bet
             }
 
+            io.to(roomCode).emit('inbetween-update', game)
             nextInBetweenPlayer(game)
+            return
           }
         }
       } else if (action === 'HIGHER' || action === 'LOWER') {
         const thirdCard = player.thirdCard
-        if (thirdCard) {
+        if (thirdCard && player.hand.length === 2) {
           player.isChoosingHigher = action === 'HIGHER'
+          
+          // Check if the third card matches the player's choice
+          const cardValue = player.hand[0].value
+          const thirdCardValue = thirdCard.value
+          
           const won = action === 'HIGHER' 
-            ? isCardHigher(thirdCard, player.hand[0])
-            : !isCardHigher(thirdCard, player.hand[0])
+            ? thirdCardValue > cardValue
+            : thirdCardValue < cardValue
           
           player.hasPlayed = true
           player.hasWon = won
@@ -459,11 +502,11 @@ app.prepare().then(() => {
             game.currentBet *= 2
           }
 
+          io.to(roomCode).emit('inbetween-update', game)
           nextInBetweenPlayer(game)
+          return
         }
       }
-
-      io.to(roomCode).emit('inbetween-update', game)
     })
 
     socket.on('disconnect', () => {

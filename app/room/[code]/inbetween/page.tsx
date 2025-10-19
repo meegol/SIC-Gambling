@@ -3,11 +3,12 @@
 import { useEffect, useState } from 'react'
 import { useParams, useSearchParams, useRouter } from 'next/navigation'
 import { io, Socket } from 'socket.io-client'
-import { PokerGame, PokerPlayer, PokerGameState, PokerAction } from '@/types/poker'
+import { InBetweenGame, InBetweenPlayer, InBetweenGameState } from '@/types/inbetween'
+import { areCardsEqual } from '@/lib/inbetweenLogic'
 import { getCardImagePath } from '@/lib/cardAssets'
 import Image from 'next/image'
 
-export default function PokerPage() {
+export default function InBetweenPage() {
   const params = useParams()
   const searchParams = useSearchParams()
   const router = useRouter()
@@ -15,19 +16,18 @@ export default function PokerPage() {
   const playerName = searchParams.get('name') || 'Player'
 
   const [socket, setSocket] = useState<Socket | null>(null)
-  const [game, setGame] = useState<PokerGame | null>(null)
-  const [currentPlayer, setCurrentPlayer] = useState<PokerPlayer | null>(null)
-  const [raiseAmount, setRaiseAmount] = useState(20)
+  const [game, setGame] = useState<InBetweenGame | null>(null)
+  const [currentPlayer, setCurrentPlayer] = useState<InBetweenPlayer | null>(null)
 
   useEffect(() => {
     const newSocket = io(process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3000')
     setSocket(newSocket)
 
     newSocket.on('connect', () => {
-      newSocket.emit('join-poker', { roomCode, playerName })
+      newSocket.emit('join-inbetween', { roomCode, playerName })
     })
 
-    newSocket.on('poker-update', (updatedGame: PokerGame) => {
+    newSocket.on('inbetween-update', (updatedGame: InBetweenGame) => {
       setGame(updatedGame)
       const player = updatedGame.players.find((p) => p.name === playerName)
       setCurrentPlayer(player || null)
@@ -38,9 +38,24 @@ export default function PokerPage() {
     }
   }, [roomCode, playerName])
 
-  const pokerAction = (action: PokerAction, amount?: number) => {
+  const playHand = () => {
     if (!socket) return
-    socket.emit('poker-action', { roomCode, action, amount })
+    socket.emit('inbetween-action', { roomCode, action: 'PLAY' })
+  }
+
+  const foldHand = () => {
+    if (!socket) return
+    socket.emit('inbetween-action', { roomCode, action: 'FOLD' })
+  }
+
+  const chooseHigher = () => {
+    if (!socket) return
+    socket.emit('inbetween-action', { roomCode, action: 'HIGHER' })
+  }
+
+  const chooseLower = () => {
+    if (!socket) return
+    socket.emit('inbetween-action', { roomCode, action: 'LOWER' })
   }
 
   if (!game || !currentPlayer) {
@@ -57,7 +72,10 @@ export default function PokerPage() {
   const isCurrentPlayerTurn = game.currentPlayerIndex >= 0 && 
     game.players[game.currentPlayerIndex]?.id === currentPlayer.id
 
-  const callAmount = game.currentBet - currentPlayer.totalBet
+  const needsHigherLowerChoice = isCurrentPlayerTurn && 
+    currentPlayer.hand.length === 2 && 
+    areCardsEqual(currentPlayer.hand[0], currentPlayer.hand[1]) &&
+    currentPlayer.isChoosingHigher === null
 
   return (
     <div className="min-h-screen p-4">
@@ -67,13 +85,13 @@ export default function PokerPage() {
           <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
             <div>
               <h1 className="text-2xl font-bold bg-gradient-to-r from-casino-gold to-yellow-400 bg-clip-text text-transparent">
-                🎴 Texas Hold'em
+                🎯 In Between
               </h1>
               <p className="text-gray-400 text-sm">Room: {roomCode}</p>
             </div>
             <div className="text-center sm:text-right">
               <p className="text-sm text-gray-400">Your Balance</p>
-              <p className="text-3xl font-bold text-casino-gold">${currentPlayer.balance}</p>
+              <p className="text-3xl font-bold text-casino-gold">₱{currentPlayer.balance}</p>
             </div>
             <button
               onClick={() => router.push(`/room/${roomCode}?name=${encodeURIComponent(playerName)}`)}
@@ -91,36 +109,21 @@ export default function PokerPage() {
               {/* Pot */}
               <div className="text-center mb-6">
                 <p className="text-gray-400 text-sm">Pot</p>
-                <p className="text-3xl font-bold text-casino-gold">${game.pot}</p>
+                <p className="text-3xl font-bold text-casino-gold">₱{game.pot}</p>
                 {game.currentBet > 0 && (
-                  <p className="text-sm text-gray-400 mt-1">Current Bet: ${game.currentBet}</p>
+                  <p className="text-sm text-gray-400 mt-1">Current Bet: ₱{game.currentBet}</p>
                 )}
-              </div>
-
-              {/* Community Cards */}
-              <div className="mb-8">
-                <h3 className="text-lg font-bold mb-4 text-center">Community Cards</h3>
-                <div className="flex gap-2 justify-center flex-wrap">
-                  {game.communityCards.map((card, idx) => (
-                    <Image
-                      key={idx}
-                      src={getCardImagePath(card, 'medium')}
-                      alt={`${card.rank} of ${card.suit}`}
-                      width={80}
-                      height={112}
-                      className="rounded-lg"
-                    />
-                  ))}
-                  {game.communityCards.length === 0 && (
-                    <p className="text-gray-500 text-sm">No community cards yet</p>
-                  )}
-                </div>
               </div>
 
               {/* Your Hand */}
               <div className="mb-8">
-                <h3 className="text-lg font-bold mb-4">Your Hand</h3>
-                <div className="flex gap-2 justify-center">
+                <h3 className="text-lg font-bold mb-4">
+                  Your Hand
+                  {currentPlayer.hasWon && ' 🎉 WINNER!'}
+                  {currentPlayer.hasPlayed && !currentPlayer.hasWon && ' 💥 Lost'}
+                  {currentPlayer.hasFolded && ' ❌ Folded'}
+                </h3>
+                <div className="flex gap-4 justify-center items-center">
                   {currentPlayer.hand.map((card, idx) => (
                     <Image
                       key={idx}
@@ -131,75 +134,80 @@ export default function PokerPage() {
                       className="rounded-lg"
                     />
                   ))}
+                  {currentPlayer.thirdCard && (
+                    <>
+                      <div className="text-2xl text-gray-600">→</div>
+                      <Image
+                        src={getCardImagePath(currentPlayer.thirdCard, 'medium')}
+                        alt={`${currentPlayer.thirdCard.rank} of ${currentPlayer.thirdCard.suit}`}
+                        width={80}
+                        height={112}
+                        className="rounded-lg border-2 border-casino-gold"
+                      />
+                    </>
+                  )}
                 </div>
-                {currentPlayer.bet > 0 && (
-                  <p className="text-center mt-2 text-sm text-yellow-400">
-                    Your Bet: ${currentPlayer.bet} | Total: ${currentPlayer.totalBet}
-                  </p>
-                )}
               </div>
 
               {/* Game Actions */}
-              {game.gameState !== PokerGameState.WAITING && game.gameState !== PokerGameState.RESULTS && (
+              {game.gameState === InBetweenGameState.CHOOSING && isCurrentPlayerTurn && !currentPlayer.hasFolded && (
                 <div className="space-y-4">
-                  {isCurrentPlayerTurn && !currentPlayer.isFolded && (
-                    <>
-                      <div className="grid grid-cols-2 gap-2">
+                  {needsHigherLowerChoice ? (
+                    <div>
+                      <p className="text-center text-lg mb-4">You have two cards of the same value! Choose:</p>
+                      <div className="grid grid-cols-2 gap-4">
                         <button
-                          onClick={() => pokerAction(PokerAction.FOLD)}
-                          className="bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-lg transition-all"
+                          onClick={chooseHigher}
+                          className="bg-green-600 hover:bg-green-700 text-white font-bold py-4 rounded-lg transition-all text-xl"
                         >
-                          Fold
+                          Higher
                         </button>
                         <button
-                          onClick={() => pokerAction(PokerAction.CHECK)}
-                          disabled={callAmount > 0}
-                          className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-3 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                          onClick={chooseLower}
+                          className="bg-red-600 hover:bg-red-700 text-white font-bold py-4 rounded-lg transition-all text-xl"
                         >
-                          {callAmount > 0 ? `Call $${callAmount}` : 'Check'}
-                        </button>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <input
-                          type="number"
-                          value={raiseAmount}
-                          onChange={(e) => setRaiseAmount(parseInt(e.target.value) || 0)}
-                          min={game.currentBet * 2}
-                          max={currentPlayer.balance}
-                          className="bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white"
-                          placeholder="Raise amount"
-                        />
-                        <button
-                          onClick={() => pokerAction(PokerAction.RAISE, raiseAmount)}
-                          disabled={raiseAmount < game.currentBet * 2 || raiseAmount > currentPlayer.balance}
-                          className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          Raise
+                          Lower
                         </button>
                       </div>
-                      <button
-                        onClick={() => pokerAction(PokerAction.ALL_IN)}
-                        disabled={currentPlayer.balance === 0}
-                        className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        All In (${currentPlayer.balance})
-                      </button>
-                    </>
-                  )}
-                  {!isCurrentPlayerTurn && !currentPlayer.isFolded && (
-                    <div className="text-center py-4 text-gray-400">
-                      Waiting for other players...
                     </div>
-                  )}
-                  {currentPlayer.isFolded && (
-                    <div className="text-center py-4 text-red-400">
-                      You Folded
+                  ) : (
+                    <div className="grid grid-cols-2 gap-4">
+                      <button
+                        onClick={playHand}
+                        className="bg-green-600 hover:bg-green-700 text-white font-bold py-4 rounded-lg transition-all text-xl"
+                      >
+                        Play Hand
+                      </button>
+                      <button
+                        onClick={foldHand}
+                        className="bg-red-600 hover:bg-red-700 text-white font-bold py-4 rounded-lg transition-all text-xl"
+                      >
+                        Fold
+                      </button>
                     </div>
                   )}
                 </div>
               )}
 
-              {game.gameState === PokerGameState.RESULTS && (
+              {game.gameState === InBetweenGameState.PLAYING && isCurrentPlayerTurn && (
+                <div className="text-center py-4">
+                  <div className="text-2xl animate-pulse">🎲 Drawing card...</div>
+                </div>
+              )}
+
+              {!isCurrentPlayerTurn && game.gameState === InBetweenGameState.CHOOSING && !currentPlayer.hasFolded && (
+                <div className="text-center py-4 text-gray-400">
+                  Waiting for other players to decide...
+                </div>
+              )}
+
+              {currentPlayer.hasFolded && (
+                <div className="text-center py-4 text-red-400">
+                  You Folded
+                </div>
+              )}
+
+              {game.gameState === InBetweenGameState.RESULTS && (
                 <div className="text-center py-4">
                   <div className="text-2xl font-bold">Round Complete!</div>
                   <p className="text-gray-400 mt-2">Starting next round...</p>
@@ -230,14 +238,14 @@ export default function PokerPage() {
                       {idx === game.currentPlayerIndex && (
                         <span className="text-xs bg-blue-500 px-2 py-1 rounded">Turn</span>
                       )}
-                      {player.isFolded && (
+                      {player.hasFolded && (
                         <span className="text-xs bg-red-500 px-2 py-1 rounded">Folded</span>
                       )}
+                      {player.hasWon && (
+                        <span className="text-xs bg-green-500 px-2 py-1 rounded">Winner!</span>
+                      )}
                     </div>
-                    <p className="text-sm text-gray-400">${player.balance}</p>
-                    {player.bet > 0 && (
-                      <p className="text-xs text-yellow-400">Bet: ${player.bet}</p>
-                    )}
+                    <p className="text-sm text-gray-400">₱{player.balance}</p>
                   </div>
                 ))}
               </div>
@@ -247,11 +255,12 @@ export default function PokerPage() {
             <div className="bg-gray-800/50 backdrop-blur-sm rounded-2xl p-4 border border-gray-700">
               <h3 className="font-bold mb-3">Rules</h3>
               <ul className="text-sm text-gray-400 space-y-1">
-                <li>• Small Blind: $5</li>
-                <li>• Big Blind: $10</li>
-                <li>• Minimum Raise: 2x current bet</li>
-                <li>• Best 5-card hand wins</li>
-                <li>• All-in available anytime</li>
+                <li>• Starting bet: ₱1</li>
+                <li>• Draw a card between your two cards</li>
+                <li>• If you lose, bet doubles</li>
+                <li>• If you win, take the pot!</li>
+                <li>• Same value cards: choose higher/lower</li>
+                <li>• Aces = 1, Face cards = 10</li>
               </ul>
             </div>
           </div>

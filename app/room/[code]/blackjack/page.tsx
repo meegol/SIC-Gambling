@@ -4,7 +4,9 @@ import { useEffect, useState } from 'react'
 import { useParams, useSearchParams, useRouter } from 'next/navigation'
 import { io, Socket } from 'socket.io-client'
 import { BlackjackGame, BlackjackPlayer, BlackjackGameState, BlackjackAction } from '@/types/blackjack'
-import { calculateHandValue, getCardDisplay, getCardColor } from '@/lib/blackjackLogic'
+import { calculateHandValue } from '@/lib/blackjackLogic'
+import { getCardImagePath } from '@/lib/cardAssets'
+import Image from 'next/image'
 
 export default function BlackjackPage() {
   const params = useParams()
@@ -107,12 +109,14 @@ export default function BlackjackPage() {
                 <h3 className="text-lg font-bold mb-4">Dealer</h3>
                 <div className="flex gap-2 flex-wrap">
                   {game.dealerHand.map((card, idx) => (
-                    <div
+                    <Image
                       key={idx}
-                      className={`w-16 h-24 bg-gray-900 rounded-lg flex flex-col items-center justify-center border-2 border-gray-600 ${getCardColor(card)}`}
-                    >
-                      <div className="text-xs">{getCardDisplay(card)}</div>
-                    </div>
+                      src={getCardImagePath(card, 'medium')}
+                      alt={`${card.rank} of ${card.suit}`}
+                      width={80}
+                      height={112}
+                      className="rounded-lg"
+                    />
                   ))}
                 </div>
                 <p className="mt-2 text-sm text-gray-400">
@@ -128,12 +132,14 @@ export default function BlackjackPage() {
                 </h3>
                 <div className="flex gap-2 flex-wrap">
                   {currentPlayer.hand.map((card, idx) => (
-                    <div
+                    <Image
                       key={idx}
-                      className={`w-16 h-24 bg-gray-900 rounded-lg flex flex-col items-center justify-center border-2 border-gray-600 ${getCardColor(card)}`}
-                    >
-                      <div className="text-xs">{getCardDisplay(card)}</div>
-                    </div>
+                      src={getCardImagePath(card, 'medium')}
+                      alt={`${card.rank} of ${card.suit}`}
+                      width={80}
+                      height={112}
+                      className="rounded-lg"
+                    />
                   ))}
                 </div>
                 <p className="mt-2 text-sm text-gray-400">

@@ -2,6 +2,7 @@ export enum GameType {
   ROULETTE = 'ROULETTE',
   BLACKJACK = 'BLACKJACK',
   POKER = 'POKER',
+  INBETWEEN = 'INBETWEEN',
 }
 
 export interface GameSelection {
@@ -29,6 +30,12 @@ export const GAME_SELECTIONS: GameSelection[] = [
     name: 'Texas Hold\'em',
     description: 'Classic poker with friends',
     icon: '🎴',
+  },
+  {
+    type: GameType.INBETWEEN,
+    name: 'In Between',
+    description: 'Draw a card between your two cards',
+    icon: '🎯',
   },
 ]
 

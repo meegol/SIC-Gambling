@@ -9,6 +9,8 @@ import { BlackjackGame, BlackjackPlayer, BlackjackGameState, BlackjackAction } f
 import { createDeck, dealCard, calculateHandValue, hasBlackjack, isBusted } from './lib/blackjackLogic'
 import { PokerGame, PokerPlayer, PokerGameState, PokerAction, PokerRound } from './types/poker'
 import { createDeck as createPokerDeck, dealCard as dealPokerCard } from './lib/pokerLogic'
+import { InBetweenGame, InBetweenPlayer, InBetweenGameState } from './types/inbetween'
+import { createDeck as createInBetweenDeck, dealCard as dealInBetweenCard, isCardBetween, areCardsEqual, isCardHigher } from './lib/inbetweenLogic'
 
 const dev = process.env.NODE_ENV !== 'production'
 const hostname = 'localhost'
@@ -20,6 +22,7 @@ const handle = app.getRequestHandler()
 const rooms = new Map<string, Room>()
 const blackjackGames = new Map<string, BlackjackGame>()
 const pokerGames = new Map<string, PokerGame>()
+const inBetweenGames = new Map<string, InBetweenGame>()
 
 app.prepare().then(() => {
   const httpServer = createServer(async (req, res) => {
@@ -349,6 +352,120 @@ app.prepare().then(() => {
       io.to(roomCode).emit('poker-update', game)
     })
 
+    // In Between handlers
+    socket.on('join-inbetween', (data: { roomCode: string; playerName: string }) => {
+      const { roomCode, playerName } = data
+      
+      if (!inBetweenGames.has(roomCode)) {
+        inBetweenGames.set(roomCode, {
+          code: roomCode,
+          players: [],
+          pot: 0,
+          currentBet: 1,
+          currentPlayerIndex: -1,
+          gameState: InBetweenGameState.WAITING,
+          deck: createInBetweenDeck(),
+          round: 1,
+        })
+      }
+
+      const game = inBetweenGames.get(roomCode)!
+      const player: InBetweenPlayer = {
+        id: socket.id,
+        name: playerName,
+        balance: 1000,
+        hand: [],
+        bet: 0,
+        hasPlayed: false,
+        hasWon: false,
+        hasFolded: false,
+        isChoosingHigher: null,
+      }
+
+      game.players.push(player)
+      socket.join(roomCode)
+
+      io.to(roomCode).emit('inbetween-update', game)
+      console.log(`${playerName} joined inbetween room ${roomCode}`)
+
+      if (game.players.length >= 2 && game.gameState === InBetweenGameState.WAITING) {
+        startInBetweenGame(game)
+      }
+    })
+
+    socket.on('inbetween-action', (data: { roomCode: string; action: string }) => {
+      const { roomCode, action } = data
+      const game = inBetweenGames.get(roomCode)
+
+      if (!game || game.currentPlayerIndex < 0) return
+
+      const player = game.players[game.currentPlayerIndex]
+      if (!player || player.id !== socket.id) return
+
+      if (action === 'FOLD') {
+        player.hasFolded = true
+        nextInBetweenPlayer(game)
+      } else if (action === 'PLAY') {
+        // Draw third card
+        const thirdCard = dealInBetweenCard(game.deck)
+        if (thirdCard) {
+          player.thirdCard = thirdCard
+          
+          // Check if player has two equal cards
+          if (areCardsEqual(player.hand[0], player.hand[1])) {
+            // Player needs to choose higher or lower
+            game.gameState = InBetweenGameState.HIGHER_LOWER
+            io.to(roomCode).emit('inbetween-update', game)
+            return
+          } else {
+            // Check if card is between
+            const won = isCardBetween(player.hand[0], player.hand[1], thirdCard)
+            player.hasPlayed = true
+            player.hasWon = won
+
+            if (won) {
+              // Player wins the pot!
+              player.balance += game.pot
+              game.pot = 0
+              game.gameState = InBetweenGameState.RESULTS
+            } else {
+              // Player loses, add to pot
+              player.balance -= game.currentBet
+              game.pot += game.currentBet
+              game.currentBet *= 2 // Double the bet
+            }
+
+            nextInBetweenPlayer(game)
+          }
+        }
+      } else if (action === 'HIGHER' || action === 'LOWER') {
+        const thirdCard = player.thirdCard
+        if (thirdCard) {
+          player.isChoosingHigher = action === 'HIGHER'
+          const won = action === 'HIGHER' 
+            ? isCardHigher(thirdCard, player.hand[0])
+            : !isCardHigher(thirdCard, player.hand[0])
+          
+          player.hasPlayed = true
+          player.hasWon = won
+
+          if (won) {
+            player.balance += game.pot
+            game.pot = 0
+            game.gameState = InBetweenGameState.RESULTS
+          } else {
+            player.balance -= game.currentBet
+            game.pot += game.currentBet
+            game.currentBet *= 2
+          }
+
+          nextInBetweenPlayer(game)
+        }
+      }
+
+      io.to(roomCode).emit('inbetween-update', game)
+    })
+
     socket.on('disconnect', () => {
       console.log('Client disconnected:', socket.id)
 
@@ -376,6 +493,15 @@ app.prepare().then(() => {
         if (playerIndex !== -1) {
           game.players.splice(playerIndex, 1)
           io.to(game.code).emit('poker-update', game)
+        }
+      })
+
+      // Remove player from inbetween game
+      inBetweenGames.forEach((game) => {
+        const playerIndex = game.players.findIndex((p) => p.id === socket.id)
+        if (playerIndex !== -1) {
+          game.players.splice(playerIndex, 1)
+          io.to(game.code).emit('inbetween-update', game)
         }
       })
     })
@@ -656,6 +782,69 @@ app.prepare().then(() => {
       game.dealerIndex = (game.dealerIndex + 1) % game.players.length
       startPokerGame(game)
     }, 5000)
+  }
+
+  function startInBetweenGame(game: InBetweenGame) {
+    game.deck = createInBetweenDeck()
+    game.pot = 0
+    game.currentBet = 1
+    game.gameState = InBetweenGameState.DEALING
+
+    // Reset all players
+    game.players.forEach((player) => {
+      player.hand = []
+      player.thirdCard = undefined
+      player.bet = 0
+      player.hasPlayed = false
+      player.hasWon = false
+      player.hasFolded = false
+      player.isChoosingHigher = null
+    })
+
+    // Deal 2 cards to each player
+    for (let i = 0; i < 2; i++) {
+      game.players.forEach((player) => {
+        const card = dealInBetweenCard(game.deck)
+        if (card) player.hand.push(card)
+      })
+    }
+
+    game.gameState = InBetweenGameState.CHOOSING
+    game.currentPlayerIndex = 0
+
+    io.to(game.code).emit('inbetween-update', game)
+  }
+
+  function nextInBetweenPlayer(game: InBetweenGame) {
+    // Check if someone won
+    if (game.gameState === InBetweenGameState.RESULTS) {
+      // Start next round after 5 seconds
+      setTimeout(() => {
+        game.round++
+        startInBetweenGame(game)
+      }, 5000)
+      return
+    }
+
+    // Move to next player
+    do {
+      game.currentPlayerIndex = (game.currentPlayerIndex + 1) % game.players.length
+    } while (game.players[game.currentPlayerIndex].hasFolded || game.players[game.currentPlayerIndex].hasPlayed)
+
+    // Check if all players have acted
+    const allActed = game.players.every((p) => p.hasFolded || p.hasPlayed)
+    if (allActed) {
+      // No one won, start new round
+      game.gameState = InBetweenGameState.RESULTS
+      setTimeout(() => {
+        game.round++
+        game.currentBet = 1
+        startInBetweenGame(game)
+      }, 5000)
+      return
+    }
+
+    io.to(game.code).emit('inbetween-update', game)
   }
 
   httpServer.listen(port, () => {
